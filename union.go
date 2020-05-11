@@ -15,6 +15,14 @@ import (
 	"fmt"
 )
 
+// AllowUnwrappedUnionsForOptionalFields, when true, causes go native types to avoid
+// having to specify union data in a `map[string]interface{}`. The logic only applies
+// to 'optional fields' (i.e. union types containing exactly two types where one type is
+// "null"). Other unions that do not fall into this category behave in the existing way.
+// The purpose of this feature is to make the go native types compatible with the standard
+// marshalling of JSON data as nested `map[string]interface{}`.
+var AllowUnwrappedUnionsForOptionalFields = false
+
 // Union wraps a datum value in a map for encoding as a Union, as required by
 // Union encoder.
 //
@@ -67,8 +75,7 @@ func buildCodecForTypeDescribedBySlice(st map[string]*Codec, enclosingNamespace 
 		codecFromName[fullName] = unionMemberCodec
 		indexFromName[fullName] = i
 	}
-
-	return &Codec{
+	codec := &Codec{
 		// NOTE: To support record field default values, union schema set to the
 		// type name of first member
 		// TODO: add/change to schemaCanonical below
@@ -175,5 +182,51 @@ func buildCodecForTypeDescribedBySlice(st map[string]*Codec, enclosingNamespace 
 			}
 			return nil, fmt.Errorf("cannot encode textual union: non-nil values ought to be specified with Go map[string]interface{}, with single key equal to type name, and value equal to datum value: %v; received: %T", allowedTypes, datum)
 		},
-	}, nil
+	}
+
+	if AllowUnwrappedUnionsForOptionalFields && len(allowedTypes) == 2 {
+		// identify which of the two types in the union is not "null" (if any)
+		optionalType := ""
+		if allowedTypes[0] == "null" {
+			optionalType = allowedTypes[1]
+		} else if allowedTypes[1] == "null" {
+			optionalType = allowedTypes[0]
+		}
+		if optionalType != "" {
+			// This is a union with two types, one of which is "null". Hence it acts like an optional field.
+
+			// We wrap the given type in a union when covnerting from native type
+			wrapOptional := func(fromNative func(buf []byte, datum interface{}) ([]byte, error)) func(buf []byte, datum interface{}) ([]byte, error) {
+				return func(buf []byte, datum interface{}) ([]byte, error) {
+					if datum != nil && optionalType != "" {
+						// wrap the value in a union representing the optional
+						return fromNative(buf, Union(optionalType, datum))
+					}
+					return fromNative(buf, datum)
+				}
+			}
+
+			// We unwrap the inner type from the union when converting to native type
+			unwrapOptional := func(toNative func(buf []byte) (interface{}, []byte, error)) func(buf []byte) (interface{}, []byte, error) {
+				return func(buf []byte) (interface{}, []byte, error) {
+					datum, buf, err := toNative(buf)
+					if err == nil {
+						if m, _ := datum.(map[string]interface{}); m != nil && optionalType != "" {
+							if val, hasVal := m[optionalType]; hasVal {
+								// extract the inner type from the union representing the optional
+								return val, buf, nil
+							}
+						}
+					}
+					return datum, buf, err
+				}
+			}
+			codec.textualFromNative = wrapOptional(codec.textualFromNative)
+			codec.binaryFromNative = wrapOptional(codec.binaryFromNative)
+			codec.nativeFromTextual = unwrapOptional(codec.nativeFromTextual)
+			codec.nativeFromBinary = unwrapOptional(codec.nativeFromBinary)
+		}
+	}
+
+	return codec, nil
 }
