@@ -39,6 +39,22 @@ func TestUnion(t *testing.T) {
 	testBinaryCodecPass(t, `[{"type":"enum","name":"colors","symbols":["red","green","blue"]},{"type":"enum","name":"animals","symbols":["dog","cat"]}]`, Union("animals", "cat"), []byte{2, 2})
 }
 
+func TestUnion_AllowUnwrappedUnionsForOptionalFields(t *testing.T) {
+	AllowUnwrappedUnionsForOptionalFields = true
+	defer func() { AllowUnwrappedUnionsForOptionalFields = false }()
+
+	testBinaryCodecPass(t, `["int","null"]`, nil, []byte("\x02"))
+	testBinaryCodecPass(t, `["null"]`, Union("null", nil), []byte("\x00"))
+	testBinaryCodecPass(t, `["null","int"]`, Union("null", nil), []byte("\x00"))
+	testBinaryCodecPass(t, `["int","null"]`, Union("null", nil), []byte("\x02"))
+
+	testBinaryCodecPass(t, `["null","int"]`, 3, []byte("\x02\x06"))
+	testBinaryCodecPass(t, `["null","long"]`, int64(3), []byte("\x02\x06"))
+
+	testBinaryCodecPass(t, `["int","null"]`, 3, []byte("\x00\x06"))
+	testBinaryEncodePass(t, `["int","null"]`, 3, []byte("\x00\x06")) // can encode a bare 3
+}
+
 func TestUnionRejectInvalidType(t *testing.T) {
 	testBinaryEncodeFailBadDatumType(t, `["null","long"]`, 3)
 	testBinaryEncodeFailBadDatumType(t, `["null","int","long","float"]`, float64(3.5))
