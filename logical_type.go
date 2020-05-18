@@ -38,9 +38,55 @@ func nativeFromDate(fn toNativeFn) toNativeFn {
 	}
 }
 
+const millisInSecond = 1000
+const nsInSecond = 1000000
+
+// Converts Unix Epoch from milliseconds to time.Time
+func FromUnixMilli(ms int64) time.Time {
+	return time.Unix(ms/int64(millisInSecond), (ms%int64(millisInSecond))*int64(nsInSecond))
+}
+
+func castToTime(d interface{}) (time.Time, bool) {
+	t, ok := d.(time.Time)
+	if ok {
+		return t, true
+	}
+
+	var l int64
+	switch val := d.(type) {
+	case int:
+		l = int64(val)
+	case int64:
+		l = int64(val)
+	case int32:
+		l = int64(val)
+	case int16:
+		l = int64(val)
+	case int8:
+		l = int64(val)
+	case uint:
+		l = int64(val)
+	case uint64:
+		l = int64(val)
+	case uint32:
+		l = int64(val)
+	case uint16:
+		l = int64(val)
+	case uint8:
+		l = int64(val)
+	case float64:
+		l = int64(val)
+	case float32:
+		l = int64(val)
+	default:
+		return time.Time{}, false
+	}
+	return FromUnixMilli(l), true
+}
+
 func dateFromNative(fn fromNativeFn) fromNativeFn {
 	return func(b []byte, d interface{}) ([]byte, error) {
-		t, ok := d.(time.Time)
+		t, ok := castToTime(d)
 		if !ok {
 			return nil, fmt.Errorf("cannot transform to binary date, expected time.Time, received %T", d)
 		}
@@ -132,7 +178,7 @@ func nativeFromTimeStampMillis(fn toNativeFn) toNativeFn {
 
 func timeStampMillisFromNative(fn fromNativeFn) fromNativeFn {
 	return func(b []byte, d interface{}) ([]byte, error) {
-		t, ok := d.(time.Time)
+		t, ok := castToTime(d)
 		if !ok {
 			return nil, fmt.Errorf("cannot transform binary timestamp-millis, expected time.Time, received %T", d)
 		}
@@ -167,7 +213,7 @@ func nativeFromTimeStampMicros(fn toNativeFn) toNativeFn {
 
 func timeStampMicrosFromNative(fn fromNativeFn) fromNativeFn {
 	return func(b []byte, d interface{}) ([]byte, error) {
-		t, ok := d.(time.Time)
+		t, ok := castToTime(d)
 		if !ok {
 			return nil, fmt.Errorf("cannot transform binary timestamp-micros, expected time.Time, received %T", d)
 		}
