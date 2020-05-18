@@ -12,6 +12,8 @@ package goavro
 import (
 	"errors"
 	"fmt"
+	"github.com/Tigraine/go-timemilli"
+	"github.com/spf13/cast"
 	"math"
 	"math/big"
 	"time"
@@ -38,9 +40,21 @@ func nativeFromDate(fn toNativeFn) toNativeFn {
 	}
 }
 
+func castToTime(d interface{}) (time.Time, bool) {
+	t, ok := d.(time.Time)
+	if ok {
+		return t, true
+	}
+	l, err := cast.ToInt64E(d)
+	if err != nil {
+		return time.Time{}, false
+	}
+	return timemilli.FromUnixMilli(l), true
+}
+
 func dateFromNative(fn fromNativeFn) fromNativeFn {
 	return func(b []byte, d interface{}) ([]byte, error) {
-		t, ok := d.(time.Time)
+		t, ok := castToTime(d)
 		if !ok {
 			return nil, fmt.Errorf("cannot transform to binary date, expected time.Time, received %T", d)
 		}
@@ -132,7 +146,7 @@ func nativeFromTimeStampMillis(fn toNativeFn) toNativeFn {
 
 func timeStampMillisFromNative(fn fromNativeFn) fromNativeFn {
 	return func(b []byte, d interface{}) ([]byte, error) {
-		t, ok := d.(time.Time)
+		t, ok := castToTime(d)
 		if !ok {
 			return nil, fmt.Errorf("cannot transform binary timestamp-millis, expected time.Time, received %T", d)
 		}
@@ -167,7 +181,7 @@ func nativeFromTimeStampMicros(fn toNativeFn) toNativeFn {
 
 func timeStampMicrosFromNative(fn fromNativeFn) fromNativeFn {
 	return func(b []byte, d interface{}) ([]byte, error) {
-		t, ok := d.(time.Time)
+		t, ok := castToTime(d)
 		if !ok {
 			return nil, fmt.Errorf("cannot transform binary timestamp-micros, expected time.Time, received %T", d)
 		}
